@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useSocket } from "../context/SocketContext";
+import { useToast } from "./Toast";
 import { ordersAPI, deliveryAPI } from "../services/api";
 import {
   LogOut,
@@ -8,11 +10,15 @@ import {
   Clock,
   CheckCircle,
   MapPin,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import LoadingSpinner from "./LoadingSpinner";
 
 const DeliveryPartnerDashboard = () => {
   const { user, logout } = useAuth();
+  const { connected, on, off } = useSocket();
+  const { addToast, ToastContainer } = useToast();
   const [currentOrder, setCurrentOrder] = useState(null);
   const [orderHistory, setOrderHistory] = useState([]);
   const [stats, setStats] = useState({
@@ -27,6 +33,104 @@ const DeliveryPartnerDashboard = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Socket event listeners for real-time updates
+  useEffect(() => {
+    if (!connected) return;
+
+    // Listen for order events relevant to this delivery partner
+    const handleOrderAssigned = (assignedOrder) => {
+      console.log("Order assigned:", assignedOrder);
+      // Check if this order is assigned to current user
+      if (
+        assignedOrder.deliveryPartner &&
+        assignedOrder.deliveryPartner._id === user?._id
+      ) {
+        setCurrentOrder(assignedOrder);
+        loadStats(); // Refresh stats
+        loadOrderHistory(); // Refresh history
+        addToast(`New order assigned: #${assignedOrder.orderId}`, "info", 6000);
+      }
+    };
+
+    const handleOrderStatusUpdated = (updatedOrder) => {
+      console.log("Order status updated:", updatedOrder);
+      // Check if this is the current user's order
+      if (
+        updatedOrder.deliveryPartner &&
+        updatedOrder.deliveryPartner._id === user?._id
+      ) {
+        // Update current order if it's the same order
+        if (currentOrder && currentOrder._id === updatedOrder._id) {
+          setCurrentOrder(updatedOrder);
+          // Show toast for status updates
+          if (updatedOrder.status === "DELIVERED") {
+            addToast("Order delivered successfully!", "success", 5000);
+            setCurrentOrder(null); // Clear current order when delivered
+          } else {
+            addToast(
+              `Order status updated to ${updatedOrder.status.replace(
+                /_/g,
+                " "
+              )}`,
+              "success",
+              4000
+            );
+          }
+        }
+
+        // Update order history
+        setOrderHistory((prevHistory) =>
+          prevHistory.map((order) =>
+            order._id === updatedOrder._id ? updatedOrder : order
+          )
+        );
+
+        loadStats(); // Refresh stats
+      }
+    };
+
+    const handleOrderUpdated = (updatedOrder) => {
+      console.log("Order updated:", updatedOrder);
+      // Check if this is the current user's order
+      if (
+        updatedOrder.deliveryPartner &&
+        updatedOrder.deliveryPartner._id === user?._id
+      ) {
+        if (currentOrder && currentOrder._id === updatedOrder._id) {
+          setCurrentOrder(updatedOrder);
+          addToast("Order details updated", "info", 3000);
+        }
+
+        // Update order history
+        setOrderHistory((prevHistory) =>
+          prevHistory.map((order) =>
+            order._id === updatedOrder._id ? updatedOrder : order
+          )
+        );
+      }
+    };
+
+    const handleOrderCreated = (newOrder) => {
+      console.log("New order created:", newOrder);
+      // This doesn't directly affect delivery partner, but might want to show notification
+      // Could be used for future features like available orders list
+    };
+
+    // Register event listeners
+    on("orderAssigned", handleOrderAssigned);
+    on("orderStatusUpdated", handleOrderStatusUpdated);
+    on("orderUpdated", handleOrderUpdated);
+    on("orderCreated", handleOrderCreated);
+
+    // Cleanup listeners on unmount
+    return () => {
+      off("orderAssigned", handleOrderAssigned);
+      off("orderStatusUpdated", handleOrderStatusUpdated);
+      off("orderUpdated", handleOrderUpdated);
+      off("orderCreated", handleOrderCreated);
+    };
+  }, [connected, on, off, user?._id, currentOrder, addToast]);
 
   const loadData = async () => {
     try {
@@ -90,10 +194,15 @@ const DeliveryPartnerDashboard = () => {
     try {
       setUpdatingStatus(true);
       await ordersAPI.updateOrderStatus(orderId, newStatus);
+      // Don't show toast here as socket event will handle it
       await loadData(); // Refresh data after status update
     } catch (error) {
       console.error("Error updating order status:", error);
-      alert("Failed to update order status. Please try again.");
+      addToast(
+        "Failed to update order status. Please try again.",
+        "error",
+        5000
+      );
     } finally {
       setUpdatingStatus(false);
     }
@@ -173,334 +282,356 @@ const DeliveryPartnerDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Delivery Partner Dashboard
-              </h1>
-              <p className="text-gray-600">Welcome back, {user?.username}</p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-              >
-                <RefreshCw
-                  className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`}
-                />
-                Refresh
-              </button>
-              <button
-                onClick={logout}
-                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-              >
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <>
+      <ToastContainer />
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="bg-white shadow">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-6">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">
+                  Delivery Partner Dashboard
+                </h1>
+                <p className="text-gray-600">Welcome back, {user?.username}</p>
+              </div>
+              <div className="flex items-center space-x-4">
+                {/* Real-time connection indicator */}
+                <div className="flex items-center">
+                  {connected ? (
+                    <div className="flex items-center text-green-600">
+                      <Wifi className="h-4 w-4 mr-1" />
+                      <span className="text-xs">Live</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center text-red-600">
+                      <WifiOff className="h-4 w-4 mr-1" />
+                      <span className="text-xs">Offline</span>
+                    </div>
+                  )}
+                </div>
 
-      {/* Stats */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <Package className="h-6 w-6 text-blue-400" />
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      Total Deliveries
-                    </dt>
-                    <dd className="text-lg font-medium text-gray-900">
-                      {stats.totalDeliveries}
-                    </dd>
-                  </dl>
-                </div>
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 mr-2 ${
+                      refreshing ? "animate-spin" : ""
+                    }`}
+                  />
+                  Refresh
+                </button>
+                <button
+                  onClick={logout}
+                  className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </button>
               </div>
             </div>
           </div>
+        </header>
 
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <CheckCircle className="h-6 w-6 text-green-400" />
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      Completed Today
-                    </dt>
-                    <dd className="text-lg font-medium text-gray-900">
-                      {stats.completedToday}
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <Clock className="h-6 w-6 text-purple-400" />
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      Average Rating
-                    </dt>
-                    <dd className="text-lg font-medium text-gray-900">
-                      {stats.averageRating
-                        ? typeof stats.averageRating === "string"
-                          ? stats.averageRating
-                          : stats.averageRating.toFixed(1)
-                        : "N/A"}
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Current Order */}
-        <div className="bg-white shadow rounded-lg mb-8">
-          <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-6">
-              Current Assignment
-            </h3>
-
-            {currentOrder ? (
-              <div className="border border-gray-200 rounded-lg p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h4 className="text-xl font-semibold text-gray-900">
-                      Order #{currentOrder.orderId}
-                    </h4>
-                    <p className="text-gray-600">
-                      Customer: {currentOrder.customerName}
-                    </p>
-                    <p className="text-gray-600">
-                      Phone: {currentOrder.customerPhone}
-                    </p>
+        {/* Stats */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="bg-white overflow-hidden shadow rounded-lg">
+              <div className="p-5">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <Package className="h-6 w-6 text-blue-400" />
                   </div>
-
-                  {/* Status Dropdown */}
-                  <div className="flex flex-col items-end">
-                    <label className="text-xs text-gray-500 mb-1">
-                      Order Status
-                    </label>
-                    {canUpdateStatus(currentOrder.status) ? (
-                      <div className="relative">
-                        <select
-                          value={currentOrder.status}
-                          onChange={(e) => {
-                            if (e.target.value !== currentOrder.status) {
-                              handleStatusUpdate(
-                                currentOrder._id,
-                                e.target.value
-                              );
-                            }
-                          }}
-                          disabled={updatingStatus}
-                          className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed appearance-none pr-8 min-w-[160px]"
-                        >
-                          <option value={currentOrder.status}>
-                            {currentOrder.status.replace(/_/g, " ")} (Current)
-                          </option>
-                          {getNextStatus(currentOrder.status) && (
-                            <option value={getNextStatus(currentOrder.status)}>
-                              →{" "}
-                              {getNextStatus(currentOrder.status).replace(
-                                /_/g,
-                                " "
-                              )}
-                            </option>
-                          )}
-                        </select>
-                        <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                          <svg
-                            className="h-4 w-4 text-gray-400"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 9l-7 7-7-7"
-                            />
-                          </svg>
-                        </div>
-                      </div>
-                    ) : (
-                      <span
-                        className={`px-3 py-2 rounded-lg text-sm font-medium ${getStatusColor(
-                          currentOrder.status
-                        )}`}
-                      >
-                        {currentOrder.status.replace(/_/g, " ")}
-                      </span>
-                    )}
-                    {updatingStatus && (
-                      <div className="flex items-center mt-1">
-                        <RefreshCw className="h-3 w-3 animate-spin mr-1" />
-                        <span className="text-xs text-gray-500">
-                          Updating...
-                        </span>
-                      </div>
-                    )}
-                    {canUpdateStatus(currentOrder.status) &&
-                      !updatingStatus && (
-                        <p className="text-xs text-gray-400 mt-1 text-right">
-                          Select next status to update
-                        </p>
-                      )}
+                  <div className="ml-5 w-0 flex-1">
+                    <dl>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Total Deliveries
+                      </dt>
+                      <dd className="text-lg font-medium text-gray-900">
+                        {stats.totalDeliveries}
+                      </dd>
+                    </dl>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  <div>
-                    <h5 className="font-medium text-gray-900 mb-2">
-                      Delivery Address
-                    </h5>
-                    <div className="flex items-start">
-                      <MapPin className="h-4 w-4 text-gray-400 mt-1 mr-2" />
+            <div className="bg-white overflow-hidden shadow rounded-lg">
+              <div className="p-5">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <CheckCircle className="h-6 w-6 text-green-400" />
+                  </div>
+                  <div className="ml-5 w-0 flex-1">
+                    <dl>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Completed Today
+                      </dt>
+                      <dd className="text-lg font-medium text-gray-900">
+                        {stats.completedToday}
+                      </dd>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white overflow-hidden shadow rounded-lg">
+              <div className="p-5">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <Clock className="h-6 w-6 text-purple-400" />
+                  </div>
+                  <div className="ml-5 w-0 flex-1">
+                    <dl>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Average Rating
+                      </dt>
+                      <dd className="text-lg font-medium text-gray-900">
+                        {stats.averageRating
+                          ? typeof stats.averageRating === "string"
+                            ? stats.averageRating
+                            : stats.averageRating.toFixed(1)
+                          : "N/A"}
+                      </dd>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Current Order */}
+          <div className="bg-white shadow rounded-lg mb-8">
+            <div className="px-4 py-5 sm:p-6">
+              <h3 className="text-lg leading-6 font-medium text-gray-900 mb-6">
+                Current Assignment
+              </h3>
+
+              {currentOrder ? (
+                <div className="border border-gray-200 rounded-lg p-6">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h4 className="text-xl font-semibold text-gray-900">
+                        Order #{currentOrder.orderId}
+                      </h4>
                       <p className="text-gray-600">
-                        {currentOrder.deliveryAddress}
+                        Customer: {currentOrder.customerName}
+                      </p>
+                      <p className="text-gray-600">
+                        Phone: {currentOrder.customerPhone}
+                      </p>
+                    </div>
+
+                    {/* Status Dropdown */}
+                    <div className="flex flex-col items-end">
+                      <label className="text-xs text-gray-500 mb-1">
+                        Order Status
+                      </label>
+                      {canUpdateStatus(currentOrder.status) ? (
+                        <div className="relative">
+                          <select
+                            value={currentOrder.status}
+                            onChange={(e) => {
+                              if (e.target.value !== currentOrder.status) {
+                                handleStatusUpdate(
+                                  currentOrder._id,
+                                  e.target.value
+                                );
+                              }
+                            }}
+                            disabled={updatingStatus}
+                            className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed appearance-none pr-8 min-w-[160px]"
+                          >
+                            <option value={currentOrder.status}>
+                              {currentOrder.status.replace(/_/g, " ")} (Current)
+                            </option>
+                            {getNextStatus(currentOrder.status) && (
+                              <option
+                                value={getNextStatus(currentOrder.status)}
+                              >
+                                →{" "}
+                                {getNextStatus(currentOrder.status).replace(
+                                  /_/g,
+                                  " "
+                                )}
+                              </option>
+                            )}
+                          </select>
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                            <svg
+                              className="h-4 w-4 text-gray-400"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
+                          </div>
+                        </div>
+                      ) : (
+                        <span
+                          className={`px-3 py-2 rounded-lg text-sm font-medium ${getStatusColor(
+                            currentOrder.status
+                          )}`}
+                        >
+                          {currentOrder.status.replace(/_/g, " ")}
+                        </span>
+                      )}
+                      {updatingStatus && (
+                        <div className="flex items-center mt-1">
+                          <RefreshCw className="h-3 w-3 animate-spin mr-1" />
+                          <span className="text-xs text-gray-500">
+                            Updating...
+                          </span>
+                        </div>
+                      )}
+                      {canUpdateStatus(currentOrder.status) &&
+                        !updatingStatus && (
+                          <p className="text-xs text-gray-400 mt-1 text-right">
+                            Select next status to update
+                          </p>
+                        )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                      <h5 className="font-medium text-gray-900 mb-2">
+                        Delivery Address
+                      </h5>
+                      <div className="flex items-start">
+                        <MapPin className="h-4 w-4 text-gray-400 mt-1 mr-2" />
+                        <p className="text-gray-600">
+                          {currentOrder.deliveryAddress}
+                        </p>
+                      </div>
+                    </div>
+                    <div>
+                      <h5 className="font-medium text-gray-900 mb-2">
+                        Order Details
+                      </h5>
+                      <p className="text-gray-600">
+                        Prep Time: {currentOrder.prepTime || "N/A"} mins
+                      </p>
+                      <p className="text-gray-600">
+                        Dispatch Time: {formatTime(currentOrder.dispatchTime)}
+                      </p>
+                      <p className="text-gray-600">
+                        Created: {formatDate(currentOrder.createdAt)}
                       </p>
                     </div>
                   </div>
-                  <div>
-                    <h5 className="font-medium text-gray-900 mb-2">
-                      Order Details
-                    </h5>
-                    <p className="text-gray-600">
-                      Prep Time: {currentOrder.prepTime || "N/A"} mins
-                    </p>
-                    <p className="text-gray-600">
-                      Dispatch Time: {formatTime(currentOrder.dispatchTime)}
-                    </p>
-                    <p className="text-gray-600">
-                      Created: {formatDate(currentOrder.createdAt)}
-                    </p>
-                  </div>
-                </div>
 
-                <div className="mb-6">
-                  <h5 className="font-medium text-gray-900 mb-2">Items</h5>
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <ul className="space-y-2">
-                      {currentOrder.items?.map((item, index) => (
-                        <li key={index} className="flex justify-between">
-                          <span>{item.name}</span>
-                          <span>Qty: {item.quantity}</span>
-                        </li>
-                      )) || <li>No items available</li>}
-                    </ul>
+                  <div className="mb-6">
+                    <h5 className="font-medium text-gray-900 mb-2">Items</h5>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <ul className="space-y-2">
+                        {currentOrder.items?.map((item, index) => (
+                          <li key={index} className="flex justify-between">
+                            <span>{item.name}</span>
+                            <span>Qty: {item.quantity}</span>
+                          </li>
+                        )) || <li>No items available</li>}
+                      </ul>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h4 className="text-lg font-medium text-gray-900 mb-2">
-                  No current assignment
-                </h4>
-                <p className="text-gray-600">
-                  You don't have any orders assigned at the moment.
-                </p>
-              </div>
-            )}
+              ) : (
+                <div className="text-center py-12">
+                  <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">
+                    No current assignment
+                  </h4>
+                  <p className="text-gray-600">
+                    You don't have any orders assigned at the moment.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Order History */}
-        <div className="bg-white shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-6">
-              Recent Deliveries
-            </h3>
+          {/* Order History */}
+          <div className="bg-white shadow rounded-lg">
+            <div className="px-4 py-5 sm:p-6">
+              <h3 className="text-lg leading-6 font-medium text-gray-900 mb-6">
+                Recent Deliveries
+              </h3>
 
-            {orderHistory.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Order ID
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Customer
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Address
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {orderHistory.slice(0, 10).map((order) => (
-                      <tr key={order._id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          #{order.orderId}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {order.customerName}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                              order.status
-                            )}`}
-                          >
-                            {order.status.replace(/_/g, " ")}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {formatDate(order.createdAt)}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                          {order.deliveryAddress}
-                        </td>
+              {orderHistory.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Order ID
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Customer
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Date
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Address
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h4 className="text-lg font-medium text-gray-900 mb-2">
-                  No delivery history
-                </h4>
-                <p className="text-gray-600">
-                  Your completed deliveries will appear here.
-                </p>
-              </div>
-            )}
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {orderHistory.slice(0, 10).map((order) => (
+                        <tr key={order._id}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            #{order.orderId}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {order.customerName}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
+                                order.status
+                              )}`}
+                            >
+                              {order.status.replace(/_/g, " ")}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatDate(order.createdAt)}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                            {order.deliveryAddress}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">
+                    No delivery history
+                  </h4>
+                  <p className="text-gray-600">
+                    Your completed deliveries will appear here.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
