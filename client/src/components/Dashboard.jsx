@@ -128,6 +128,35 @@ const Dashboard = () => {
       addToast(`${partnerName} is now ${statusText}`, "info", 3000);
     };
 
+    const handleDeliveryPartnerCreated = (newPartner) => {
+      console.log("Delivery partner created:", newPartner);
+      loadDeliveryPartners(); // Refresh partners list
+      loadStats(); // Refresh stats
+      addToast(
+        `New delivery partner ${newPartner.username} created`,
+        "success",
+        4000
+      );
+    };
+
+    const handleDeliveryPartnerUpdated = (updatedPartner) => {
+      console.log("Delivery partner updated:", updatedPartner);
+      loadDeliveryPartners(); // Refresh partners list
+      loadStats(); // Refresh stats
+      addToast(
+        `Delivery partner ${updatedPartner.username} updated`,
+        "info",
+        3000
+      );
+    };
+
+    const handleDeliveryPartnerDeleted = ({ partnerId }) => {
+      console.log("Delivery partner deleted:", partnerId);
+      loadDeliveryPartners(); // Refresh partners list
+      loadStats(); // Refresh stats
+      addToast("Delivery partner deleted", "info", 3000);
+    };
+
     // Register event listeners
     on("orderCreated", handleOrderCreated);
     on("orderStatusUpdated", handleOrderStatusUpdated);
@@ -138,6 +167,9 @@ const Dashboard = () => {
       "deliveryPartnerAvailabilityChanged",
       handleDeliveryPartnerAvailabilityChanged
     );
+    on("deliveryPartnerCreated", handleDeliveryPartnerCreated);
+    on("deliveryPartnerUpdated", handleDeliveryPartnerUpdated);
+    on("deliveryPartnerDeleted", handleDeliveryPartnerDeleted);
 
     // Cleanup listeners on unmount
     return () => {
@@ -150,6 +182,9 @@ const Dashboard = () => {
         "deliveryPartnerAvailabilityChanged",
         handleDeliveryPartnerAvailabilityChanged
       );
+      off("deliveryPartnerCreated", handleDeliveryPartnerCreated);
+      off("deliveryPartnerUpdated", handleDeliveryPartnerUpdated);
+      off("deliveryPartnerDeleted", handleDeliveryPartnerDeleted);
     };
   }, [connected, on, off, addToast, deliveryPartners]);
 

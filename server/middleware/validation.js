@@ -48,6 +48,26 @@ class ValidationMiddleware {
   ];
 
   /**
+   * Delivery partner creation validation (Manager only)
+   * Note: role is not validated since it's hardcoded as "delivery_partner" in the backend
+   */
+  static validateDeliveryPartnerCreation = [
+    body("username")
+      .trim()
+      .isLength({ min: 3 })
+      .withMessage("Username must be at least 3 characters"),
+    body("email").isEmail().withMessage("Please provide a valid email"),
+    body("password")
+      .isLength({ min: 6 })
+      .withMessage("Password must be at least 6 characters"),
+    body("estimatedDeliveryTime")
+      .optional()
+      .isInt({ min: 1 })
+      .withMessage("Estimated delivery time must be a positive number"),
+    ValidationMiddleware.handleValidationErrors,
+  ];
+
+  /**
    * User profile update validation
    */
   static validateProfileUpdate = [

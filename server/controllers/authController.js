@@ -208,12 +208,15 @@ const createDeliveryPartner = async (req, res) => {
     const deliveryPartner = new User(userData);
     await deliveryPartner.save();
 
+    // Remove password before emitting socket event
+    const deliveryPartnerData = deliveryPartner.toJSON();
+
     // Emit real-time update
-    req.io.emit("deliveryPartnerCreated", deliveryPartner);
+    req.io.emit("deliveryPartnerCreated", deliveryPartnerData);
 
     res.status(201).json({
       message: "Delivery partner created successfully",
-      deliveryPartner,
+      deliveryPartner: deliveryPartnerData,
     });
   } catch (error) {
     console.error("Create delivery partner error:", error);

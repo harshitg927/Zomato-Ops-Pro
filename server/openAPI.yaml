@@ -1,0 +1,1607 @@
+openapi: 3.0.3
+info:
+  title: Restaurant Order Management System API
+  description: |
+    A comprehensive backend API for managing restaurant orders, delivery partners, and real-time order tracking.
+
+    ## Features
+    - User authentication (Manager and Delivery Partner roles)
+    - Order management with status tracking
+    - Delivery partner assignment and availability management
+    - Real-time updates via Socket.IO
+    - Role-based access control
+
+    ## Authentication
+    This API uses JWT tokens for authentication. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer <your-jwt-token>
+    ```
+
+    ## Base URL
+    ```
+    http://localhost:5000/api
+    ```
+  version: 1.0.0
+  contact:
+    name: Restaurant Order Management API
+    email: support@restaurant-api.com
+  license:
+    name: ISC
+
+servers:
+  - url: http://localhost:5000/api
+    description: Development server
+  - url: https://your-production-domain.com/api
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and profile management
+  - name: Orders
+    description: Order management operations
+  - name: Delivery
+    description: Delivery partner operations
+  - name: Health
+    description: API health check
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+          description: User ID
+        username:
+          type: string
+          description: Username
+          minLength: 3
+        email:
+          type: string
+          format: email
+          description: User email address
+        role:
+          type: string
+          enum: [manager, delivery_partner]
+          description: User role
+        isAvailable:
+          type: boolean
+          description: Availability status (for delivery partners)
+          default: true
+        currentOrder:
+          type: string
+          nullable: true
+          description: Current assigned order ID (for delivery partners)
+        estimatedDeliveryTime:
+          type: integer
+          minimum: 1
+          description: Estimated delivery time in minutes
+          default: 30
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - username
+        - email
+        - role
+
+    Order:
+      type: object
+      properties:
+        _id:
+          type: string
+          description: Order ID
+        orderId:
+          type: string
+          description: Unique order identifier
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+          minItems: 1
+        prepTime:
+          type: integer
+          minimum: 1
+          description: Preparation time in minutes
+        status:
+          type: string
+          enum: [PREP, PICKED, ON_ROUTE, DELIVERED]
+          default: PREP
+        deliveryPartner:
+          type: string
+          nullable: true
+          description: Assigned delivery partner ID
+        dispatchTime:
+          type: integer
+          nullable: true
+          description: Auto-calculated dispatch time
+        customerInfo:
+          $ref: "#/components/schemas/CustomerInfo"
+        totalAmount:
+          type: number
+          minimum: 0
+          description: Total order amount
+        statusHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusHistoryItem"
+        createdBy:
+          type: string
+          description: ID of user who created the order
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - orderId
+        - items
+        - prepTime
+        - customerInfo
+        - createdBy
+
+    OrderItem:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Item name
+        quantity:
+          type: integer
+          minimum: 1
+          description: Item quantity
+        price:
+          type: number
+          minimum: 0
+          description: Item price
+      required:
+        - name
+        - quantity
+        - price
+
+    CustomerInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Customer name
+        phone:
+          type: string
+          description: Customer phone number
+        address:
+          type: string
+          description: Customer address
+      required:
+        - name
+        - phone
+        - address
+
+    StatusHistoryItem:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [PREP, PICKED, ON_ROUTE, DELIVERED]
+        timestamp:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+          description: ID of user who updated the status
+
+    ApiResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Response message
+        success:
+          type: boolean
+          description: Operation success status
+
+    AuthResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiResponse"
+        - type: object
+          properties:
+            token:
+              type: string
+              description: JWT authentication token
+            user:
+              $ref: "#/components/schemas/User"
+
+    ValidationError:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              msg:
+                type: string
+              param:
+                type: string
+              location:
+                type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message
+        error:
+          type: string
+          description: Error details
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: API Health Check
+      description: Check if the API and database are running
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: OK
+                  message:
+                    type: string
+                    example: Server is running
+                  database:
+                    type: string
+                    example: Connected
+
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new user
+      description: Register a new manager or delivery partner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  example: john_doe
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  minLength: 6
+                  example: password123
+                role:
+                  type: string
+                  enum: [manager, delivery_partner]
+                  example: delivery_partner
+                estimatedDeliveryTime:
+                  type: integer
+                  minimum: 1
+                  example: 30
+                  description: Optional, for delivery partners only
+              required:
+                - username
+                - email
+                - password
+                - role
+      responses:
+        "201":
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error or user already exists
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login user
+      description: Authenticate user and get JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  example: password123
+              required:
+                - email
+                - password
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/profile:
+    get:
+      tags:
+        - Authentication
+      summary: Get current user profile
+      description: Get the profile of the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      tags:
+        - Authentication
+      summary: Update user profile
+      description: Update the profile of the authenticated user
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  example: john_doe_updated
+                estimatedDeliveryTime:
+                  type: integer
+                  minimum: 1
+                  example: 25
+                  description: For delivery partners only
+      responses:
+        "200":
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      user:
+                        $ref: "#/components/schemas/User"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh JWT token
+      description: Get a new JWT token for the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Token refreshed successfully
+                  token:
+                    type: string
+                    description: New JWT token
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout user
+      description: Logout the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/delivery-partners:
+    get:
+      tags:
+        - Authentication
+      summary: Get all delivery partners
+      description: Get a list of all delivery partners (Manager only)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Delivery partners retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deliveryPartners:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags:
+        - Authentication
+      summary: Create new delivery partner
+      description: Create a new delivery partner (Manager only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  example: delivery_partner_1
+                email:
+                  type: string
+                  format: email
+                  example: partner@example.com
+                password:
+                  type: string
+                  minLength: 6
+                  example: password123
+                estimatedDeliveryTime:
+                  type: integer
+                  minimum: 1
+                  example: 30
+              required:
+                - username
+                - email
+                - password
+      responses:
+        "201":
+          description: Delivery partner created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error or user already exists
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/delivery-partners/{partnerId}:
+    put:
+      tags:
+        - Authentication
+      summary: Update delivery partner
+      description: Update delivery partner details (Manager only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: partnerId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Delivery partner ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                estimatedDeliveryTime:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: Delivery partner updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      user:
+                        $ref: "#/components/schemas/User"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Delivery partner not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      tags:
+        - Authentication
+      summary: Delete delivery partner
+      description: Delete a delivery partner (Manager only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: partnerId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Delivery partner ID
+      responses:
+        "200":
+          description: Delivery partner deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Delivery partner not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /orders:
+    post:
+      tags:
+        - Orders
+      summary: Create new order
+      description: Create a new order (Manager only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/OrderItem"
+                  minItems: 1
+                  example:
+                    - name: "Margherita Pizza"
+                      quantity: 2
+                      price: 12.99
+                    - name: "Garlic Bread"
+                      quantity: 1
+                      price: 4.50
+                prepTime:
+                  type: integer
+                  minimum: 1
+                  example: 25
+                  description: Preparation time in minutes
+                customerInfo:
+                  $ref: "#/components/schemas/CustomerInfo"
+                  example:
+                    name: "John Smith"
+                    phone: "+1234567890"
+                    address: "123 Main St, City, State 12345"
+              required:
+                - items
+                - prepTime
+                - customerInfo
+      responses:
+        "201":
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      order:
+                        $ref: "#/components/schemas/Order"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      tags:
+        - Orders
+      summary: Get all orders
+      description: Get all orders with filtering and pagination (Manager or Delivery Partner)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PREP, PICKED, ON_ROUTE, DELIVERED]
+          description: Filter by order status
+        - name: deliveryPartner
+          in: query
+          schema:
+            type: string
+          description: Filter by delivery partner ID
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Number of orders per page
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, totalAmount]
+            default: createdAt
+          description: Sort field
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort order
+      responses:
+        "200":
+          description: Orders retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Order"
+                  totalOrders:
+                    type: integer
+                    description: Total number of orders
+                  currentPage:
+                    type: integer
+                    description: Current page number
+                  totalPages:
+                    type: integer
+                    description: Total number of pages
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager or Delivery Partner role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /orders/{id}:
+    get:
+      tags:
+        - Orders
+      summary: Get order by ID
+      description: Get a specific order by ID (Manager or Delivery Partner)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Order ID
+      responses:
+        "200":
+          description: Order retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: "#/components/schemas/Order"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager or Delivery Partner role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      tags:
+        - Orders
+      summary: Update order
+      description: Update order details (Manager only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Order ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/OrderItem"
+                  minItems: 1
+                prepTime:
+                  type: integer
+                  minimum: 1
+                customerInfo:
+                  $ref: "#/components/schemas/CustomerInfo"
+      responses:
+        "200":
+          description: Order updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      order:
+                        $ref: "#/components/schemas/Order"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      tags:
+        - Orders
+      summary: Delete order
+      description: Delete an order (Manager only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Order ID
+      responses:
+        "200":
+          description: Order deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /orders/{id}/assign:
+    post:
+      tags:
+        - Orders
+      summary: Assign delivery partner to order
+      description: Assign a delivery partner to an order (Manager only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Order ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deliveryPartnerId:
+                  type: string
+                  description: ID of the delivery partner to assign
+                  example: "60f7b3b3b3b3b3b3b3b3b3b3"
+              required:
+                - deliveryPartnerId
+      responses:
+        "200":
+          description: Delivery partner assigned successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      order:
+                        $ref: "#/components/schemas/Order"
+        "400":
+          description: Validation error or delivery partner not available
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Order or delivery partner not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /orders/{id}/status:
+    put:
+      tags:
+        - Orders
+      summary: Update order status
+      description: Update the status of an order (Manager or Delivery Partner)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Order ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [PREP, PICKED, ON_ROUTE, DELIVERED]
+                  example: "PICKED"
+                  description: New order status
+              required:
+                - status
+      responses:
+        "200":
+          description: Order status updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      order:
+                        $ref: "#/components/schemas/Order"
+        "400":
+          description: Validation error or invalid status transition
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager or Delivery Partner role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /delivery/current-order:
+    get:
+      tags:
+        - Delivery
+      summary: Get current assigned order
+      description: Get the current order assigned to the delivery partner (Delivery Partner only)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current order retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    oneOf:
+                      - $ref: "#/components/schemas/Order"
+                      - type: "null"
+                    description: Current assigned order or null if none
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Delivery Partner role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /delivery/order-history:
+    get:
+      tags:
+        - Delivery
+      summary: Get delivery partner's order history
+      description: Get the order history for the delivery partner (Delivery Partner only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Number of orders per page
+      responses:
+        "200":
+          description: Order history retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Order"
+                  totalOrders:
+                    type: integer
+                  currentPage:
+                    type: integer
+                  totalPages:
+                    type: integer
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Delivery Partner role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /delivery/availability:
+    put:
+      tags:
+        - Delivery
+      summary: Update delivery partner availability
+      description: Update the availability status of the delivery partner (Delivery Partner only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isAvailable:
+                  type: boolean
+                  example: true
+                  description: Availability status
+              required:
+                - isAvailable
+      responses:
+        "200":
+          description: Availability updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      user:
+                        $ref: "#/components/schemas/User"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Delivery Partner role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /delivery/eta:
+    put:
+      tags:
+        - Delivery
+      summary: Update estimated delivery time
+      description: Update the estimated delivery time for the delivery partner (Delivery Partner only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                estimatedDeliveryTime:
+                  type: integer
+                  minimum: 1
+                  example: 25
+                  description: Estimated delivery time in minutes
+              required:
+                - estimatedDeliveryTime
+      responses:
+        "200":
+          description: Estimated delivery time updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      user:
+                        $ref: "#/components/schemas/User"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Delivery Partner role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /delivery/stats:
+    get:
+      tags:
+        - Delivery
+      summary: Get delivery partner stats
+      description: Get statistics for the delivery partner (Delivery Partner only)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stats:
+                    type: object
+                    properties:
+                      totalDeliveries:
+                        type: integer
+                        description: Total number of completed deliveries
+                      totalEarnings:
+                        type: number
+                        description: Total earnings from deliveries
+                      averageDeliveryTime:
+                        type: number
+                        description: Average delivery time in minutes
+                      successRate:
+                        type: number
+                        description: Success rate percentage
+                      ordersToday:
+                        type: integer
+                        description: Number of orders delivered today
+                      ordersThisWeek:
+                        type: integer
+                        description: Number of orders delivered this week
+                      ordersThisMonth:
+                        type: integer
+                        description: Number of orders delivered this month
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Delivery Partner role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /delivery/available:
+    get:
+      tags:
+        - Delivery
+      summary: Get available delivery partners
+      description: Get all available delivery partners (Manager only)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Available delivery partners retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availablePartners:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /delivery/workload:
+    get:
+      tags:
+        - Delivery
+      summary: Get delivery partner workload summary
+      description: Get workload summary for all delivery partners (Manager only)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Workload summary retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workloadSummary:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        partner:
+                          $ref: "#/components/schemas/User"
+                        ordersInProgress:
+                          type: integer
+                          description: Number of orders currently assigned
+                        ordersCompleted:
+                          type: integer
+                          description: Number of orders completed
+                        averageDeliveryTime:
+                          type: number
+                          description: Average delivery time in minutes
+                        isAvailable:
+                          type: boolean
+                          description: Current availability status
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - Manager role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

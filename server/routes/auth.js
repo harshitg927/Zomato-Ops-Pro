@@ -57,7 +57,7 @@ router.post(
   "/delivery-partners",
   authenticateToken,
   requireManager,
-  ValidationMiddleware.validateUserRegistration,
+  ValidationMiddleware.validateDeliveryPartnerCreation,
   createDeliveryPartner
 );
 
