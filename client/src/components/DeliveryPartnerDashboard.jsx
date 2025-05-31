@@ -462,10 +462,10 @@ const DeliveryPartnerDashboard = () => {
                         Order #{currentOrder.orderId}
                       </h4>
                       <p className="text-gray-600">
-                        Customer: {currentOrder.customerName}
+                        Customer: {currentOrder.customerInfo?.name || "N/A"}
                       </p>
                       <p className="text-gray-600">
-                        Phone: {currentOrder.customerPhone}
+                        Phone: {currentOrder.customerInfo?.phone || "N/A"}
                       </p>
                     </div>
 
@@ -475,7 +475,10 @@ const DeliveryPartnerDashboard = () => {
                         Order Status
                       </label>
                       {canUpdateStatus(currentOrder.status) ? (
-                        <div className="relative">
+                        <div
+                          className="relative"
+                          key={`dropdown-${currentOrder._id}-${currentOrder.status}`}
+                        >
                           <select
                             value={currentOrder.status}
                             onChange={(e) => {
@@ -525,6 +528,7 @@ const DeliveryPartnerDashboard = () => {
                           className={`px-3 py-2 rounded-lg text-sm font-medium ${getStatusColor(
                             currentOrder.status
                           )}`}
+                          key={`status-${currentOrder._id}-${currentOrder.status}`}
                         >
                           {currentOrder.status.replace(/_/g, " ")}
                         </span>
@@ -554,7 +558,7 @@ const DeliveryPartnerDashboard = () => {
                       <div className="flex items-start">
                         <MapPin className="h-4 w-4 text-gray-400 mt-1 mr-2" />
                         <p className="text-gray-600">
-                          {currentOrder.deliveryAddress}
+                          {currentOrder.customerInfo?.address || "N/A"}
                         </p>
                       </div>
                     </div>
@@ -638,7 +642,7 @@ const DeliveryPartnerDashboard = () => {
                             #{order.orderId}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {order.customerName}
+                            {order.customerInfo?.name || "N/A"}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
