@@ -189,6 +189,10 @@ const assignDeliveryPartner = async (req, res) => {
 const updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
+
+    // Map frontend status to backend status
+    const backendStatus = mapStatusToBackend(status);
+
     const order = await Order.findById(req.params.id).populate(
       "deliveryPartner"
     );
@@ -210,7 +214,7 @@ const updateOrderStatus = async (req, res) => {
     // Validate status flow (sequential)
     const statusFlow = ["PREP", "PICKED", "ON_ROUTE", "DELIVERED"];
     const currentIndex = statusFlow.indexOf(order.status);
-    const newIndex = statusFlow.indexOf(status);
+    const newIndex = statusFlow.indexOf(backendStatus);
 
     if (newIndex < currentIndex) {
       return res.status(400).json({
@@ -226,15 +230,15 @@ const updateOrderStatus = async (req, res) => {
     }
 
     // Update order status
-    order.status = status;
+    order.status = backendStatus;
     order.statusHistory.push({
-      status,
+      status: backendStatus,
       timestamp: new Date(),
       updatedBy: req.user._id,
     });
 
     // If order is delivered, mark delivery partner as available
-    if (status === "DELIVERED" && order.deliveryPartner) {
+    if (backendStatus === "DELIVERED" && order.deliveryPartner) {
       const deliveryPartner = await User.findById(order.deliveryPartner._id);
       if (deliveryPartner) {
         deliveryPartner.isAvailable = true;
@@ -250,17 +254,61 @@ const updateOrderStatus = async (req, res) => {
     );
     await order.populate("statusHistory.updatedBy", "username");
 
+    // Map the response data for frontend
+    const mappedOrder = {
+      _id: order._id,
+      orderId: order.orderId,
+      items: order.items,
+      prepTime: order.prepTime,
+      status: mapStatusToFrontend(order.status),
+      deliveryPartner: order.deliveryPartner,
+      dispatchTime: order.dispatchTime,
+      customerName: order.customerInfo.name,
+      customerPhone: order.customerInfo.phone,
+      deliveryAddress: order.customerInfo.address,
+      totalAmount: order.totalAmount,
+      statusHistory: order.statusHistory.map((history) => ({
+        ...history,
+        status: mapStatusToFrontend(history.status),
+      })),
+      createdBy: order.createdBy,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+
     // Emit real-time update
-    req.io.emit("orderStatusUpdated", order);
+    req.io.emit("orderStatusUpdated", mappedOrder);
 
     res.json({
       message: "Order status updated successfully",
-      order,
+      order: mappedOrder,
     });
   } catch (error) {
     console.error("Update order status error:", error);
     res.status(500).json({ message: "Server error" });
   }
+};
+
+// Helper function to map backend status to frontend status
+const mapStatusToFrontend = (backendStatus) => {
+  const statusMap = {
+    PREP: "PREPARING",
+    PICKED: "READY",
+    ON_ROUTE: "OUT_FOR_DELIVERY",
+    DELIVERED: "DELIVERED",
+  };
+  return statusMap[backendStatus] || backendStatus;
+};
+
+// Helper function to map frontend status to backend status
+const mapStatusToBackend = (frontendStatus) => {
+  const statusMap = {
+    PREPARING: "PREP",
+    READY: "PICKED",
+    OUT_FOR_DELIVERY: "ON_ROUTE",
+    DELIVERED: "DELIVERED",
+  };
+  return statusMap[frontendStatus] || frontendStatus;
 };
 
 /**

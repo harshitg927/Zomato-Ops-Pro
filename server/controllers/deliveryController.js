@@ -25,11 +25,54 @@ const getCurrentOrder = async (req, res) => {
       });
     }
 
-    res.json({ order });
+    const mappedOrder = {
+      _id: order._id,
+      orderId: order.orderId,
+      items: order.items,
+      prepTime: order.prepTime,
+      status: mapStatusToFrontend(order.status),
+      deliveryPartner: order.deliveryPartner,
+      dispatchTime: order.dispatchTime,
+      customerName: order.customerInfo.name,
+      customerPhone: order.customerInfo.phone,
+      deliveryAddress: order.customerInfo.address,
+      totalAmount: order.totalAmount,
+      statusHistory: order.statusHistory.map((history) => ({
+        ...history,
+        status: mapStatusToFrontend(history.status),
+      })),
+      createdBy: order.createdBy,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+
+    res.json({ order: mappedOrder });
   } catch (error) {
     console.error("Fetch current order error:", error);
     res.status(500).json({ message: "Server error" });
   }
+};
+
+// Helper function to map backend status to frontend status
+const mapStatusToFrontend = (backendStatus) => {
+  const statusMap = {
+    PREP: "PREPARING",
+    PICKED: "READY",
+    ON_ROUTE: "OUT_FOR_DELIVERY",
+    DELIVERED: "DELIVERED",
+  };
+  return statusMap[backendStatus] || backendStatus;
+};
+
+// Helper function to map frontend status to backend status
+const mapStatusToBackend = (frontendStatus) => {
+  const statusMap = {
+    PREPARING: "PREP",
+    READY: "PICKED",
+    OUT_FOR_DELIVERY: "ON_ROUTE",
+    DELIVERED: "DELIVERED",
+  };
+  return statusMap[frontendStatus] || frontendStatus;
 };
 
 /**
@@ -43,7 +86,8 @@ const getOrderHistory = async (req, res) => {
     let query = { deliveryPartner: req.user._id };
 
     if (status) {
-      query.status = status;
+      // Map frontend status to backend status for query
+      query.status = mapStatusToBackend(status);
     }
 
     const orders = await Order.find(query)
@@ -54,8 +98,30 @@ const getOrderHistory = async (req, res) => {
 
     const total = await Order.countDocuments(query);
 
+    // Map the orders data to match frontend expectations
+    const mappedOrders = orders.map((order) => ({
+      _id: order._id,
+      orderId: order.orderId,
+      items: order.items,
+      prepTime: order.prepTime,
+      status: mapStatusToFrontend(order.status),
+      deliveryPartner: order.deliveryPartner,
+      dispatchTime: order.dispatchTime,
+      customerName: order.customerInfo.name,
+      customerPhone: order.customerInfo.phone,
+      deliveryAddress: order.customerInfo.address,
+      totalAmount: order.totalAmount,
+      statusHistory: order.statusHistory.map((history) => ({
+        ...history,
+        status: mapStatusToFrontend(history.status),
+      })),
+      createdBy: order.createdBy,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    }));
+
     res.json({
-      orders,
+      orders: mappedOrders,
       pagination: {
         current: parseInt(page),
         pages: Math.ceil(total / limit),
@@ -217,10 +283,14 @@ const getStats = async (req, res) => {
 
     res.json({
       stats: {
-        totalDelivered,
+        totalDeliveries: totalDelivered,
+        completedToday: todayDeliveries,
         inProgress,
-        todayDeliveries,
         weekDeliveries,
+        averageRating:
+          avgDeliveryTime > 0
+            ? (5 - Math.min(avgDeliveryTime / 30, 4)).toFixed(1)
+            : 4.5, // Mock rating based on delivery time
         avgDeliveryTime: `${avgDeliveryTime} minutes`,
         isAvailable: req.user.isAvailable,
         estimatedDeliveryTime: req.user.estimatedDeliveryTime,

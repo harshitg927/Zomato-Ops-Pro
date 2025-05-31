@@ -146,7 +146,15 @@ class ValidationMiddleware {
    */
   static validateOrderStatusUpdate = [
     body("status")
-      .isIn(["PREP", "PICKED", "ON_ROUTE", "DELIVERED"])
+      .isIn([
+        "PREP",
+        "PICKED",
+        "ON_ROUTE",
+        "DELIVERED",
+        "PREPARING",
+        "READY",
+        "OUT_FOR_DELIVERY",
+      ])
       .withMessage("Invalid status"),
     ValidationMiddleware.handleValidationErrors,
   ];
