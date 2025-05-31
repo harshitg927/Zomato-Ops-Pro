@@ -6,6 +6,7 @@ import { ordersAPI, deliveryAPI } from "../services/api";
 import OrderTable from "./OrderTable";
 import CreateOrderModal from "./CreateOrderModal";
 import AssignPartnerModal from "./AssignPartnerModal";
+import DeliveryPartnerManagement from "./DeliveryPartnerManagement";
 import {
   Plus,
   LogOut,
@@ -14,6 +15,8 @@ import {
   Clock,
   Wifi,
   WifiOff,
+  ShoppingBag,
+  UserCheck,
 } from "lucide-react";
 import LoadingSpinner from "./LoadingSpinner";
 
@@ -28,6 +31,7 @@ const Dashboard = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [activeTab, setActiveTab] = useState("orders"); // "orders" or "partners"
   const [stats, setStats] = useState({
     totalOrders: 0,
     activeOrders: 0,
@@ -256,6 +260,19 @@ const Dashboard = () => {
     return <LoadingSpinner text="Loading dashboard..." />;
   }
 
+  const tabs = [
+    {
+      id: "orders",
+      name: "Orders Management",
+      icon: ShoppingBag,
+    },
+    {
+      id: "partners",
+      name: "Delivery Partners",
+      icon: UserCheck,
+    },
+  ];
+
   return (
     <>
       <ToastContainer />
@@ -309,6 +326,37 @@ const Dashboard = () => {
             </div>
           </div>
         </header>
+
+        {/* Navigation Tabs */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="border-b border-gray-200 mt-4">
+            <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`group inline-flex items-center py-2 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === tab.id
+                        ? "border-blue-500 text-blue-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <Icon
+                      className={`-ml-0.5 mr-2 h-5 w-5 ${
+                        activeTab === tab.id
+                          ? "text-blue-500"
+                          : "text-gray-400 group-hover:text-gray-500"
+                      }`}
+                    />
+                    {tab.name}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        </div>
 
         {/* Stats */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -374,28 +422,32 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Orders Section */}
-          <div className="bg-white shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">
-                  Orders Management
-                </h3>
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Order
-                </button>
-              </div>
+          {/* Content based on active tab */}
+          {activeTab === "orders" && (
+            <div className="bg-white shadow rounded-lg">
+              <div className="px-4 py-5 sm:p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">
+                    Orders Management
+                  </h3>
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Order
+                  </button>
+                </div>
 
-              <OrderTable
-                orders={orders}
-                onAssignPartner={handleAssignPartner}
-              />
+                <OrderTable
+                  orders={orders}
+                  onAssignPartner={handleAssignPartner}
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {activeTab === "partners" && <DeliveryPartnerManagement />}
         </div>
 
         {/* Modals */}
