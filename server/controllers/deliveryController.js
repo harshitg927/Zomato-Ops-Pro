@@ -33,9 +33,7 @@ const getCurrentOrder = async (req, res) => {
       status: mapStatusToFrontend(order.status),
       deliveryPartner: order.deliveryPartner,
       dispatchTime: order.dispatchTime,
-      customerName: order.customerInfo.name,
-      customerPhone: order.customerInfo.phone,
-      deliveryAddress: order.customerInfo.address,
+      customerInfo: order.customerInfo,
       totalAmount: order.totalAmount,
       statusHistory: order.statusHistory.map((history) => ({
         ...history,
@@ -107,9 +105,7 @@ const getOrderHistory = async (req, res) => {
       status: mapStatusToFrontend(order.status),
       deliveryPartner: order.deliveryPartner,
       dispatchTime: order.dispatchTime,
-      customerName: order.customerInfo.name,
-      customerPhone: order.customerInfo.phone,
-      deliveryAddress: order.customerInfo.address,
+      customerInfo: order.customerInfo,
       totalAmount: order.totalAmount,
       statusHistory: order.statusHistory.map((history) => ({
         ...history,
