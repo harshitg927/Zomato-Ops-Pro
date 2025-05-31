@@ -178,6 +178,149 @@ const logout = async (req, res) => {
   }
 };
 
+/**
+ * Create new delivery partner (Manager only)
+ */
+const createDeliveryPartner = async (req, res) => {
+  try {
+    const { username, email, password, estimatedDeliveryTime } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }],
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        message: "User with this email or username already exists",
+      });
+    }
+
+    // Create new delivery partner
+    const userData = {
+      username,
+      email,
+      password,
+      role: "delivery_partner",
+      estimatedDeliveryTime: estimatedDeliveryTime || 30,
+    };
+
+    const deliveryPartner = new User(userData);
+    await deliveryPartner.save();
+
+    // Emit real-time update
+    req.io.emit("deliveryPartnerCreated", deliveryPartner);
+
+    res.status(201).json({
+      message: "Delivery partner created successfully",
+      deliveryPartner,
+    });
+  } catch (error) {
+    console.error("Create delivery partner error:", error);
+    res.status(500).json({ message: "Server error during partner creation" });
+  }
+};
+
+/**
+ * Delete delivery partner (Manager only)
+ */
+const deleteDeliveryPartner = async (req, res) => {
+  try {
+    const { partnerId } = req.params;
+
+    // Find the delivery partner
+    const deliveryPartner = await User.findById(partnerId);
+    if (!deliveryPartner) {
+      return res.status(404).json({ message: "Delivery partner not found" });
+    }
+
+    // Check if the user is actually a delivery partner
+    if (deliveryPartner.role !== "delivery_partner") {
+      return res
+        .status(400)
+        .json({ message: "User is not a delivery partner" });
+    }
+
+    // Check if partner has active orders
+    if (deliveryPartner.currentOrder) {
+      return res.status(400).json({
+        message:
+          "Cannot delete partner with active orders. Please reassign or complete current orders first.",
+      });
+    }
+
+    // Delete the partner
+    await User.findByIdAndDelete(partnerId);
+
+    // Emit real-time update
+    req.io.emit("deliveryPartnerDeleted", { partnerId });
+
+    res.json({
+      message: "Delivery partner deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete delivery partner error:", error);
+    res.status(500).json({ message: "Server error during partner deletion" });
+  }
+};
+
+/**
+ * Update delivery partner (Manager only)
+ */
+const updateDeliveryPartner = async (req, res) => {
+  try {
+    const { partnerId } = req.params;
+    const { username, estimatedDeliveryTime, isAvailable } = req.body;
+
+    // Find the delivery partner
+    const deliveryPartner = await User.findById(partnerId);
+    if (!deliveryPartner) {
+      return res.status(404).json({ message: "Delivery partner not found" });
+    }
+
+    // Check if the user is actually a delivery partner
+    if (deliveryPartner.role !== "delivery_partner") {
+      return res
+        .status(400)
+        .json({ message: "User is not a delivery partner" });
+    }
+
+    // Update allowed fields
+    const updates = {};
+    if (username !== undefined) updates.username = username;
+    if (estimatedDeliveryTime !== undefined)
+      updates.estimatedDeliveryTime = estimatedDeliveryTime;
+    if (isAvailable !== undefined) updates.isAvailable = isAvailable;
+
+    const updatedPartner = await User.findByIdAndUpdate(partnerId, updates, {
+      new: true,
+      runValidators: true,
+    }).select("-password");
+
+    // Emit real-time updates
+    req.io.emit("deliveryPartnerUpdated", updatedPartner);
+
+    // If availability changed, emit specific availability change event
+    if (
+      isAvailable !== undefined &&
+      isAvailable !== deliveryPartner.isAvailable
+    ) {
+      req.io.emit("deliveryPartnerAvailabilityChanged", {
+        partnerId: updatedPartner._id,
+        isAvailable: updatedPartner.isAvailable,
+      });
+    }
+
+    res.json({
+      message: "Delivery partner updated successfully",
+      deliveryPartner: updatedPartner,
+    });
+  } catch (error) {
+    console.error("Update delivery partner error:", error);
+    res.status(500).json({ message: "Server error during partner update" });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -186,4 +329,7 @@ module.exports = {
   getDeliveryPartners,
   refreshToken,
   logout,
+  createDeliveryPartner,
+  deleteDeliveryPartner,
+  updateDeliveryPartner,
 };

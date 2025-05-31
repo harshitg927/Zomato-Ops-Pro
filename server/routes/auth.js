@@ -5,6 +5,9 @@ const {
   getProfile,
   updateProfile,
   getDeliveryPartners,
+  createDeliveryPartner,
+  deleteDeliveryPartner,
+  updateDeliveryPartner,
   refreshToken,
   logout,
 } = require("../controllers/authController");
@@ -47,6 +50,31 @@ router.get(
   authenticateToken,
   requireManager,
   getDeliveryPartners
+);
+
+// Create new delivery partner (for managers)
+router.post(
+  "/delivery-partners",
+  authenticateToken,
+  requireManager,
+  ValidationMiddleware.validateUserRegistration,
+  createDeliveryPartner
+);
+
+// Update delivery partner (for managers)
+router.put(
+  "/delivery-partners/:partnerId",
+  authenticateToken,
+  requireManager,
+  updateDeliveryPartner
+);
+
+// Delete delivery partner (for managers)
+router.delete(
+  "/delivery-partners/:partnerId",
+  authenticateToken,
+  requireManager,
+  deleteDeliveryPartner
 );
 
 module.exports = router;
