@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { useToast } from "./Toast";
@@ -30,9 +30,62 @@ const DeliveryPartnerDashboard = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
+  // Wrap data loading functions in useCallback to make them stable dependencies
+  const loadCurrentOrder = useCallback(async () => {
+    try {
+      const response = await ordersAPI.getCurrentOrder();
+      setCurrentOrder(response.data.order || null);
+    } catch (error) {
+      console.error("Error loading current order:", error);
+      setCurrentOrder(null);
+    }
+  }, []);
+
+  const loadOrderHistory = useCallback(async () => {
+    try {
+      const response = await ordersAPI.getOrderHistory();
+      const historyData = response.data.orders || response.data || [];
+      setOrderHistory(historyData);
+    } catch (error) {
+      console.error("Error loading order history:", error);
+      setOrderHistory([]);
+    }
+  }, []);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const response = await deliveryAPI.getStats();
+      setStats(
+        response.data.stats || {
+          totalDeliveries: 0,
+          completedToday: 0,
+          averageRating: 0,
+        }
+      );
+    } catch (error) {
+      console.error("Error loading stats:", error);
+      setStats({
+        totalDeliveries: 0,
+        completedToday: 0,
+        averageRating: 0,
+      });
+    }
+  }, []);
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      await Promise.all([loadCurrentOrder(), loadOrderHistory(), loadStats()]);
+    } catch (error) {
+      console.error("Error loading data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadCurrentOrder, loadOrderHistory, loadStats]);
+
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   // Socket event listeners for real-time updates
   useEffect(() => {
@@ -54,39 +107,71 @@ const DeliveryPartnerDashboard = () => {
     };
 
     const handleOrderStatusUpdated = (updatedOrder) => {
-      console.log("Order status updated:", updatedOrder);
+      console.log(
+        "[DeliveryPartner] Order status updated event received:",
+        updatedOrder
+      );
+      console.log("[DeliveryPartner] Current user ID:", user?._id);
+      console.log(
+        "[DeliveryPartner] Updated order delivery partner:",
+        updatedOrder.deliveryPartner
+      );
+
       // Check if this is the current user's order
       if (
         updatedOrder.deliveryPartner &&
         updatedOrder.deliveryPartner._id === user?._id
       ) {
+        console.log("[DeliveryPartner] This is my order, updating state");
+
         // Update current order if it's the same order
-        if (currentOrder && currentOrder._id === updatedOrder._id) {
-          setCurrentOrder(updatedOrder);
-          // Show toast for status updates
-          if (updatedOrder.status === "DELIVERED") {
-            addToast("Order delivered successfully!", "success", 5000);
-            setCurrentOrder(null); // Clear current order when delivered
-          } else {
-            addToast(
-              `Order status updated to ${updatedOrder.status.replace(
-                /_/g,
-                " "
-              )}`,
-              "success",
-              4000
+        setCurrentOrder((prevOrder) => {
+          console.log("[DeliveryPartner] Previous current order:", prevOrder);
+
+          if (prevOrder && prevOrder._id === updatedOrder._id) {
+            console.log(
+              `[DeliveryPartner] Updating current order status: ${prevOrder.status} -> ${updatedOrder.status}`
             );
+
+            // Show toast for status updates
+            if (updatedOrder.status === "DELIVERED") {
+              addToast("Order delivered successfully!", "success", 5000);
+              console.log(
+                "[DeliveryPartner] Order delivered, clearing current order"
+              );
+              // Return null to clear current order when delivered
+              return null;
+            } else {
+              addToast(
+                `Order status updated to ${updatedOrder.status.replace(
+                  /_/g,
+                  " "
+                )}`,
+                "success",
+                4000
+              );
+              console.log("[DeliveryPartner] Returning updated order");
+              // Return the updated order
+              return updatedOrder;
+            }
           }
-        }
+          console.log(
+            "[DeliveryPartner] Not updating current order (different order or no current order)"
+          );
+          return prevOrder;
+        });
 
         // Update order history
-        setOrderHistory((prevHistory) =>
-          prevHistory.map((order) =>
+        setOrderHistory((prevHistory) => {
+          console.log("[DeliveryPartner] Updating order history");
+          return prevHistory.map((order) =>
             order._id === updatedOrder._id ? updatedOrder : order
-          )
-        );
+          );
+        });
 
         loadStats(); // Refresh stats
+      } else {
+        console.log("[DeliveryPartner] Not my order, ignoring update");
       }
     };
 
@@ -97,10 +182,13 @@ const DeliveryPartnerDashboard = () => {
         updatedOrder.deliveryPartner &&
         updatedOrder.deliveryPartner._id === user?._id
       ) {
-        if (currentOrder && currentOrder._id === updatedOrder._id) {
-          setCurrentOrder(updatedOrder);
-          addToast("Order details updated", "info", 3000);
-        }
+        setCurrentOrder((prevOrder) => {
+          if (prevOrder && prevOrder._id === updatedOrder._id) {
+            addToast("Order details updated", "info", 3000);
+            return updatedOrder;
+          }
+          return prevOrder;
+        });
 
         // Update order history
         setOrderHistory((prevHistory) =>
@@ -111,78 +199,18 @@ const DeliveryPartnerDashboard = () => {
       }
     };
 
-    const handleOrderCreated = (newOrder) => {
-      console.log("New order created:", newOrder);
-      // This doesn't directly affect delivery partner, but might want to show notification
-      // Could be used for future features like available orders list
-    };
-
     // Register event listeners
     on("orderAssigned", handleOrderAssigned);
     on("orderStatusUpdated", handleOrderStatusUpdated);
     on("orderUpdated", handleOrderUpdated);
-    on("orderCreated", handleOrderCreated);
 
     // Cleanup listeners on unmount
     return () => {
       off("orderAssigned", handleOrderAssigned);
       off("orderStatusUpdated", handleOrderStatusUpdated);
       off("orderUpdated", handleOrderUpdated);
-      off("orderCreated", handleOrderCreated);
     };
-  }, [connected, on, off, user?._id, currentOrder, addToast]);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      await Promise.all([loadCurrentOrder(), loadOrderHistory(), loadStats()]);
-    } catch (error) {
-      console.error("Error loading data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadCurrentOrder = async () => {
-    try {
-      const response = await ordersAPI.getCurrentOrder();
-      setCurrentOrder(response.data.order || null);
-    } catch (error) {
-      console.error("Error loading current order:", error);
-      setCurrentOrder(null);
-    }
-  };
-
-  const loadOrderHistory = async () => {
-    try {
-      const response = await ordersAPI.getOrderHistory();
-      const historyData = response.data.orders || response.data || [];
-      setOrderHistory(historyData);
-    } catch (error) {
-      console.error("Error loading order history:", error);
-      setOrderHistory([]);
-    }
-  };
-
-  const loadStats = async () => {
-    try {
-      const response = await deliveryAPI.getStats();
-      setStats(
-        response.data.stats || {
-          totalDeliveries: 0,
-          completedToday: 0,
-          averageRating: 0,
-        }
-      );
-    } catch (error) {
-      console.error("Error loading stats:", error);
-      setStats({
-        totalDeliveries: 0,
-        completedToday: 0,
-        averageRating: 0,
-      });
-    }
-  };
+  }, [connected, on, off, user?._id, addToast, loadStats, loadOrderHistory]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -193,16 +221,32 @@ const DeliveryPartnerDashboard = () => {
   const handleStatusUpdate = async (orderId, newStatus) => {
     try {
       setUpdatingStatus(true);
-      await ordersAPI.updateOrderStatus(orderId, newStatus);
-      // Don't show toast here as socket event will handle it
-      await loadData(); // Refresh data after status update
-    } catch (error) {
-      console.error("Error updating order status:", error);
-      addToast(
-        "Failed to update order status. Please try again.",
-        "error",
-        5000
+      console.log(
+        `[DeliveryPartner] Updating order ${orderId} status to ${newStatus}`
       );
+      console.log(`[DeliveryPartner] Current user ID: ${user?._id}`);
+      console.log(`[DeliveryPartner] Current order:`, currentOrder);
+
+      const response = await ordersAPI.updateOrderStatus(orderId, newStatus);
+      console.log(
+        `[DeliveryPartner] Status update API response:`,
+        response.data
+      );
+
+      // Don't reload data manually - socket events will handle the update
+      console.log(
+        "[DeliveryPartner] Status update API call successful, waiting for socket event"
+      );
+    } catch (error) {
+      console.error("[DeliveryPartner] Error updating order status:", error);
+      console.error("[DeliveryPartner] Error response:", error.response?.data);
+
+      let errorMessage = "Failed to update order status. Please try again.";
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+
+      addToast(errorMessage, "error", 5000);
     } finally {
       setUpdatingStatus(false);
     }

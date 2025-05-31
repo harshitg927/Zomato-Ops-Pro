@@ -189,9 +189,13 @@ const assignDeliveryPartner = async (req, res) => {
 const updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
+    console.log(
+      `Status update request: Order ${req.params.id} -> ${status} by user ${req.user._id} (${req.user.role})`
+    );
 
     // Map frontend status to backend status
     const backendStatus = mapStatusToBackend(status);
+    console.log(`Mapped status: ${status} -> ${backendStatus}`);
 
     const order = await Order.findById(req.params.id).populate(
       "deliveryPartner"
@@ -207,6 +211,9 @@ const updateOrderStatus = async (req, res) => {
         !order.deliveryPartner ||
         order.deliveryPartner._id.toString() !== req.user._id.toString()
       ) {
+        console.log(
+          `Access denied: Delivery partner ${req.user._id} tried to update order ${order._id} assigned to ${order.deliveryPartner?._id}`
+        );
         return res.status(403).json({ message: "Access denied" });
       }
     }
@@ -230,6 +237,7 @@ const updateOrderStatus = async (req, res) => {
     }
 
     // Update order status
+    const oldStatus = order.status;
     order.status = backendStatus;
     order.statusHistory.push({
       status: backendStatus,
@@ -244,6 +252,9 @@ const updateOrderStatus = async (req, res) => {
         deliveryPartner.isAvailable = true;
         deliveryPartner.currentOrder = null;
         await deliveryPartner.save();
+        console.log(
+          `Delivery partner ${deliveryPartner.username} marked as available`
+        );
       }
     }
 
@@ -276,8 +287,28 @@ const updateOrderStatus = async (req, res) => {
       updatedAt: order.updatedAt,
     };
 
-    // Emit real-time update
+    console.log(
+      `Status updated successfully: ${oldStatus} -> ${backendStatus} (frontend: ${mappedOrder.status})`
+    );
+
+    // Emit real-time updates to different audiences
+    // 1. Global update for managers
+    req.io.to("managers").emit("orderStatusUpdated", mappedOrder);
+
+    // 2. Specific update for the delivery partner
+    if (order.deliveryPartner) {
+      req.io
+        .to(`user_${order.deliveryPartner._id}`)
+        .emit("orderStatusUpdated", mappedOrder);
+      console.log(
+        `Emitted orderStatusUpdated to delivery partner ${order.deliveryPartner._id}`
+      );
+    }
+
+    // 3. General broadcast (for any other connected clients)
     req.io.emit("orderStatusUpdated", mappedOrder);
+
+    console.log(`Socket events emitted for order ${order._id} status update`);
 
     res.json({
       message: "Order status updated successfully",
