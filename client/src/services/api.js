@@ -64,6 +64,12 @@ export const authAPI = {
   register: (userData) => api.post("/auth/register", userData),
   getProfile: () => api.get("/auth/profile"),
   getDeliveryPartners: () => api.get("/auth/delivery-partners"),
+  createDeliveryPartner: (partnerData) =>
+    api.post("/auth/delivery-partners", partnerData),
+  updateDeliveryPartner: (partnerId, partnerData) =>
+    api.put(`/auth/delivery-partners/${partnerId}`, partnerData),
+  deleteDeliveryPartner: (partnerId) =>
+    api.delete(`/auth/delivery-partners/${partnerId}`),
   logout: () => api.post("/auth/logout"),
 };
 
