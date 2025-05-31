@@ -196,15 +196,3 @@ All partner management actions are reflected in real-time across all connected c
 2. **Manager assigns delivery partner** → Partner receives notification
 3. **Partner updates status to "Out for Delivery"** → Real-time update sent
 4. **Partner marks as "Delivered"** → Order completed, partner becomes available
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
