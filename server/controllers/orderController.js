@@ -35,12 +35,32 @@ const createOrder = async (req, res) => {
     await order.save();
     await order.populate("createdBy", "username email");
 
-    // Emit real-time update
-    req.io.emit("orderCreated", order);
+    // Map the order data for frontend before emitting
+    const mappedOrder = {
+      _id: order._id,
+      orderId: order.orderId,
+      items: order.items,
+      prepTime: order.prepTime,
+      status: mapStatusToFrontend(order.status),
+      deliveryPartner: order.deliveryPartner,
+      dispatchTime: order.dispatchTime,
+      customerInfo: order.customerInfo,
+      totalAmount: order.totalAmount,
+      statusHistory: order.statusHistory.map((history) => ({
+        ...history,
+        status: mapStatusToFrontend(history.status),
+      })),
+      createdBy: order.createdBy,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+
+    // Emit real-time update with mapped data
+    req.io.emit("orderCreated", mappedOrder);
 
     res.status(201).json({
       message: "Order created successfully",
-      order,
+      order: mappedOrder,
     });
   } catch (error) {
     console.error("Create order error:", error);
@@ -80,8 +100,28 @@ const getAllOrders = async (req, res) => {
 
     const total = await Order.countDocuments(query);
 
+    // Map orders to frontend format
+    const mappedOrders = orders.map((order) => ({
+      _id: order._id,
+      orderId: order.orderId,
+      items: order.items,
+      prepTime: order.prepTime,
+      status: mapStatusToFrontend(order.status),
+      deliveryPartner: order.deliveryPartner,
+      dispatchTime: order.dispatchTime,
+      customerInfo: order.customerInfo,
+      totalAmount: order.totalAmount,
+      statusHistory: order.statusHistory.map((history) => ({
+        ...history,
+        status: mapStatusToFrontend(history.status),
+      })),
+      createdBy: order.createdBy,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    }));
+
     res.json({
-      orders,
+      orders: mappedOrders,
       pagination: {
         current: parseInt(page),
         pages: Math.ceil(total / limit),
@@ -117,7 +157,27 @@ const getOrderById = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    res.json({ order });
+    // Map order to frontend format
+    const mappedOrder = {
+      _id: order._id,
+      orderId: order.orderId,
+      items: order.items,
+      prepTime: order.prepTime,
+      status: mapStatusToFrontend(order.status),
+      deliveryPartner: order.deliveryPartner,
+      dispatchTime: order.dispatchTime,
+      customerInfo: order.customerInfo,
+      totalAmount: order.totalAmount,
+      statusHistory: order.statusHistory.map((history) => ({
+        ...history,
+        status: mapStatusToFrontend(history.status),
+      })),
+      createdBy: order.createdBy,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+
+    res.json({ order: mappedOrder });
   } catch (error) {
     console.error("Fetch order error:", error);
     res.status(500).json({ message: "Server error" });
@@ -170,12 +230,32 @@ const assignDeliveryPartner = async (req, res) => {
       "username email estimatedDeliveryTime"
     );
 
-    // Emit real-time update
-    req.io.emit("orderAssigned", order);
+    // Map the order data for frontend before emitting
+    const mappedOrder = {
+      _id: order._id,
+      orderId: order.orderId,
+      items: order.items,
+      prepTime: order.prepTime,
+      status: mapStatusToFrontend(order.status),
+      deliveryPartner: order.deliveryPartner,
+      dispatchTime: order.dispatchTime,
+      customerInfo: order.customerInfo,
+      totalAmount: order.totalAmount,
+      statusHistory: order.statusHistory.map((history) => ({
+        ...history,
+        status: mapStatusToFrontend(history.status),
+      })),
+      createdBy: order.createdBy,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+
+    // Emit real-time update with mapped data
+    req.io.emit("orderAssigned", mappedOrder);
 
     res.json({
       message: "Delivery partner assigned successfully",
-      order,
+      order: mappedOrder,
     });
   } catch (error) {
     console.error("Assign delivery partner error:", error);
@@ -274,9 +354,7 @@ const updateOrderStatus = async (req, res) => {
       status: mapStatusToFrontend(order.status),
       deliveryPartner: order.deliveryPartner,
       dispatchTime: order.dispatchTime,
-      customerName: order.customerInfo.name,
-      customerPhone: order.customerInfo.phone,
-      deliveryAddress: order.customerInfo.address,
+      customerInfo: order.customerInfo,
       totalAmount: order.totalAmount,
       statusHistory: order.statusHistory.map((history) => ({
         ...history,
@@ -384,12 +462,32 @@ const updateOrder = async (req, res) => {
       .populate("deliveryPartner", "username email estimatedDeliveryTime")
       .populate("createdBy", "username email");
 
-    // Emit real-time update
-    req.io.emit("orderUpdated", updatedOrder);
+    // Map the order data for frontend before emitting
+    const mappedOrder = {
+      _id: updatedOrder._id,
+      orderId: updatedOrder.orderId,
+      items: updatedOrder.items,
+      prepTime: updatedOrder.prepTime,
+      status: mapStatusToFrontend(updatedOrder.status),
+      deliveryPartner: updatedOrder.deliveryPartner,
+      dispatchTime: updatedOrder.dispatchTime,
+      customerInfo: updatedOrder.customerInfo,
+      totalAmount: updatedOrder.totalAmount,
+      statusHistory: updatedOrder.statusHistory.map((history) => ({
+        ...history,
+        status: mapStatusToFrontend(history.status),
+      })),
+      createdBy: updatedOrder.createdBy,
+      createdAt: updatedOrder.createdAt,
+      updatedAt: updatedOrder.updatedAt,
+    };
+
+    // Emit real-time update with mapped data
+    req.io.emit("orderUpdated", mappedOrder);
 
     res.json({
       message: "Order updated successfully",
-      order: updatedOrder,
+      order: mappedOrder,
     });
   } catch (error) {
     console.error("Update order error:", error);
