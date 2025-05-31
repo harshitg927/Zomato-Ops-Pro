@@ -118,6 +118,8 @@ const DeliveryPartnerDashboard = () => {
 
   const getNextStatus = (currentStatus) => {
     switch (currentStatus) {
+      case "PREPARING":
+        return "READY";
       case "READY":
         return "OUT_FOR_DELIVERY";
       case "OUT_FOR_DELIVERY":
@@ -129,6 +131,8 @@ const DeliveryPartnerDashboard = () => {
 
   const getStatusActionText = (currentStatus) => {
     switch (currentStatus) {
+      case "PREPARING":
+        return "Mark as Ready";
       case "READY":
         return "Start Delivery";
       case "OUT_FOR_DELIVERY":
@@ -139,7 +143,11 @@ const DeliveryPartnerDashboard = () => {
   };
 
   const canUpdateStatus = (status) => {
-    return status === "READY" || status === "OUT_FOR_DELIVERY";
+    return (
+      status === "PREPARING" ||
+      status === "READY" ||
+      status === "OUT_FOR_DELIVERY"
+    );
   };
 
   const formatTime = (timeString) => {
@@ -255,7 +263,9 @@ const DeliveryPartnerDashboard = () => {
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
                       {stats.averageRating
-                        ? stats.averageRating.toFixed(1)
+                        ? typeof stats.averageRating === "string"
+                          ? stats.averageRating
+                          : stats.averageRating.toFixed(1)
                         : "N/A"}
                     </dd>
                   </dl>
@@ -277,7 +287,7 @@ const DeliveryPartnerDashboard = () => {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h4 className="text-xl font-semibold text-gray-900">
-                      Order #{currentOrder._id.slice(-6)}
+                      Order #{currentOrder.orderId}
                     </h4>
                     <p className="text-gray-600">
                       Customer: {currentOrder.customerName}
@@ -286,13 +296,80 @@ const DeliveryPartnerDashboard = () => {
                       Phone: {currentOrder.customerPhone}
                     </p>
                   </div>
-                  <span
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
-                      currentOrder.status
-                    )}`}
-                  >
-                    {currentOrder.status.replace(/_/g, " ")}
-                  </span>
+
+                  {/* Status Dropdown */}
+                  <div className="flex flex-col items-end">
+                    <label className="text-xs text-gray-500 mb-1">
+                      Order Status
+                    </label>
+                    {canUpdateStatus(currentOrder.status) ? (
+                      <div className="relative">
+                        <select
+                          value={currentOrder.status}
+                          onChange={(e) => {
+                            if (e.target.value !== currentOrder.status) {
+                              handleStatusUpdate(
+                                currentOrder._id,
+                                e.target.value
+                              );
+                            }
+                          }}
+                          disabled={updatingStatus}
+                          className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed appearance-none pr-8 min-w-[160px]"
+                        >
+                          <option value={currentOrder.status}>
+                            {currentOrder.status.replace(/_/g, " ")} (Current)
+                          </option>
+                          {getNextStatus(currentOrder.status) && (
+                            <option value={getNextStatus(currentOrder.status)}>
+                              →{" "}
+                              {getNextStatus(currentOrder.status).replace(
+                                /_/g,
+                                " "
+                              )}
+                            </option>
+                          )}
+                        </select>
+                        <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                          <svg
+                            className="h-4 w-4 text-gray-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 9l-7 7-7-7"
+                            />
+                          </svg>
+                        </div>
+                      </div>
+                    ) : (
+                      <span
+                        className={`px-3 py-2 rounded-lg text-sm font-medium ${getStatusColor(
+                          currentOrder.status
+                        )}`}
+                      >
+                        {currentOrder.status.replace(/_/g, " ")}
+                      </span>
+                    )}
+                    {updatingStatus && (
+                      <div className="flex items-center mt-1">
+                        <RefreshCw className="h-3 w-3 animate-spin mr-1" />
+                        <span className="text-xs text-gray-500">
+                          Updating...
+                        </span>
+                      </div>
+                    )}
+                    {canUpdateStatus(currentOrder.status) &&
+                      !updatingStatus && (
+                        <p className="text-xs text-gray-400 mt-1 text-right">
+                          Select next status to update
+                        </p>
+                      )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -336,28 +413,6 @@ const DeliveryPartnerDashboard = () => {
                     </ul>
                   </div>
                 </div>
-
-                {canUpdateStatus(currentOrder.status) && (
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() =>
-                        handleStatusUpdate(
-                          currentOrder._id,
-                          getNextStatus(currentOrder.status)
-                        )
-                      }
-                      disabled={updatingStatus}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                    >
-                      {updatingStatus ? (
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                      )}
-                      {getStatusActionText(currentOrder.status)}
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
               <div className="text-center py-12">
@@ -406,7 +461,7 @@ const DeliveryPartnerDashboard = () => {
                     {orderHistory.slice(0, 10).map((order) => (
                       <tr key={order._id}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          #{order._id.slice(-6)}
+                          #{order.orderId}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {order.customerName}
